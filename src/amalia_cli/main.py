@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 from .client import AmaliaClient
@@ -6,7 +7,27 @@ from .conversation import Conversation
 from .prompts import PromptManager
 
 
-def select_prompt(prompt_manager: PromptManager) -> str:
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        prog="amalia",
+        description="CLI for interacting with the AMALIA language model.",
+    )
+
+    parser.add_argument(
+        "--prompt",
+        help="System prompt to use.",
+    )
+
+    parser.add_argument(
+        "--list-prompts",
+        action="store_true",
+        help="List available system prompts.",
+    )
+
+    return parser.parse_args()
+
+
+def select_prompt(prompt_manager: PromptManager) -> str | None:
     prompts = prompt_manager.list_prompts()
 
     if not prompts:
@@ -24,10 +45,13 @@ def select_prompt(prompt_manager: PromptManager) -> str:
     while True:
         selection = input("Select a prompt: ").strip()
 
+        if selection.lower() == "exit":
+            return None
+
         try:
             index = int(selection)
         except ValueError:
-            print("Please enter a number.")
+            print("Please enter a number or 'exit'.")
             continue
 
         if 1 <= index <= len(prompts):
@@ -35,8 +59,9 @@ def select_prompt(prompt_manager: PromptManager) -> str:
 
         print("Invalid selection.")
 
-
 def main():
+    args = parse_arguments()
+
     config = Config()
     client = AmaliaClient(config)
 
@@ -44,8 +69,27 @@ def main():
     prompts_directory = project_root / "prompts"
 
     prompt_manager = PromptManager(prompts_directory)
+    if args.list_prompts:
+        prompts = prompt_manager.list_prompts()
 
-    system_prompt = select_prompt(prompt_manager)
+        if not prompts:
+            print("No prompts found.")
+            return
+
+        print("Available prompts:\n")
+
+        for prompt_name in prompts:
+            print(f"  {prompt_name}")
+
+        return
+
+    if args.prompt:
+        system_prompt = prompt_manager.get_prompt(args.prompt)
+    else:
+        system_prompt = select_prompt(prompt_manager)
+        
+    if system_prompt is None:
+        return
 
     conversation = Conversation(system_prompt)
 
