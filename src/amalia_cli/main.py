@@ -1,12 +1,15 @@
 import argparse
 from pathlib import Path
 
+from textual import app
+
 from .client import AmaliaClient
 from .commands.registry import CommandRegistry
 from .configuration import Config
 from .conversation import Conversation
 from .prompts import PromptManager
-
+from .tui.tui import AmaliaTUI
+from .app import AmaliaAppController
 
 class AppContext:
     def __init__(
@@ -163,8 +166,13 @@ def main():
 
     client = AmaliaClient(config)
     conversation = Conversation(system_prompt)
-
     command_registry = CommandRegistry()
+    
+    controller = AmaliaAppController(
+        client=client,
+        conversation=conversation,
+        command_registry=command_registry,
+    )
 
     context = AppContext(
         client=client,
@@ -173,34 +181,8 @@ def main():
         command_registry=command_registry,
     )
 
-    print("\nAMALIA CLI")
-    print("Type /help for available commands.\n")
-
-    while context.running:
-        try:
-            user_input = input("You > ").strip()
-
-        except (KeyboardInterrupt, EOFError):
-            print("\nGoodbye!")
-            break
-
-        if not user_input:
-            continue
-
-        if handle_command(user_input, context):
-            continue
-
-        conversation.add_user_message(user_input)
-
-        print("AMALIA > ", end="", flush=True)
-
-        assistant_response = client.chat(
-            conversation.get_messages()
-        )
-
-        conversation.add_assistant_message(
-            assistant_response
-        )
+    app = AmaliaTUI(controller)
+    app.run()
 
 
 if __name__ == "__main__":

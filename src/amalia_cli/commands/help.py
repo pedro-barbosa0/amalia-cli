@@ -2,12 +2,14 @@ from .registry import Command
 
 
 def execute(context):
-    print("\nAvailable commands:\n")
+    lines = ["Available commands:", ""]
 
     for command in context.command_registry.all():
-        print(f"  /{command.name:<12} {command.description}")
+        lines.append(
+            f"\n  /{command.name:<12} - {command.description}"
+        )
 
-    print()
+    return "\n".join(lines)
 
 
 COMMAND = Command(

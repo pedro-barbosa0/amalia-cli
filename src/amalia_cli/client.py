@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterator
 
 import httpx
 
@@ -9,8 +10,11 @@ class AmaliaClient:
     def __init__(self, config: Config):
         self.config = config
 
-    def chat(self, messages: list[dict]) -> str:
-        url = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
+    def chat_stream(
+        self,
+        messages: list[dict],
+    ) -> Iterator[str]:
+        url = f"{self.config.base_url}/v1/chat/completions"
 
         headers = {
             "Content-Type": "application/json",
@@ -20,18 +24,10 @@ class AmaliaClient:
         payload = {
             "model": self.config.model,
             "messages": messages,
+            "temperature": self.config.temperature,
+            "max_completion_tokens": self.config.max_completion_tokens,
             "stream": True,
         }
-
-        if self.config.temperature is not None:
-            payload["temperature"] = self.config.temperature
-
-        if self.config.max_completion_tokens is not None:
-            payload["max_completion_tokens"] = (
-                self.config.max_completion_tokens
-            )
-
-        full_response = ""
 
         with httpx.stream(
             "POST",
@@ -56,9 +52,15 @@ class AmaliaClient:
                 content = chunk["choices"][0]["delta"].get("content")
 
                 if content:
-                    print(content, end="", flush=True)
-                    full_response += content
+                    yield content
 
-        print()
+    def chat(
+        self,
+        messages: list[dict],
+    ) -> str:
+        full_response = ""
+
+        for chunk in self.chat_stream(messages):
+            full_response += chunk
 
         return full_response

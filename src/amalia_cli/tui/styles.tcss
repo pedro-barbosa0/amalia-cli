@@ -1,0 +1,36 @@
+Screen {
+    background: ansi_black;
+    color: ansi_white;
+}
+
+#messages {
+    color: ansi_red;
+    height: 1fr;
+    padding: 1 1;
+}
+
+.message {
+    margin-bottom: 1;
+}
+
+.user {
+    color: ansi_white;
+    text-style: bold;
+}
+
+.assistant {
+    /*color: ansi_white;*/
+    /*margin-left: 2;*/
+}
+
+Input {
+    dock: bottom;
+    background: ansi_black;
+    color: ansi_white;
+    border: tall ansi_red;
+    margin-bottom: 2;
+}
+
+Input:focus {
+    border: tall ansi_yellow;
+}
