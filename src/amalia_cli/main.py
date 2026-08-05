@@ -2,9 +2,26 @@ import argparse
 from pathlib import Path
 
 from .client import AmaliaClient
+from .commands.registry import CommandRegistry
 from .configuration import Config
 from .conversation import Conversation
 from .prompts import PromptManager
+
+
+class AppContext:
+    def __init__(
+        self,
+        client: AmaliaClient,
+        conversation: Conversation,
+        prompt_manager: PromptManager,
+        command_registry: CommandRegistry,
+    ):
+        self.client = client
+        self.conversation = conversation
+        self.prompt_manager = prompt_manager
+        self.command_registry = command_registry
+
+        self.running = True
 
 
 def parse_arguments():
@@ -15,7 +32,7 @@ def parse_arguments():
 
     parser.add_argument(
         "--prompt",
-        help="System prompt to use.",
+        help="System prompt to use for this run.",
     )
 
     parser.add_argument(
@@ -24,51 +41,102 @@ def parse_arguments():
         help="List available system prompts.",
     )
 
+    parser.add_argument(
+        "--config",
+        action="store_true",
+        help="Configure AMALIA.",
+    )
+
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        help="Override the default temperature for this run.",
+    )
+
+    parser.add_argument(
+        "--max-completion-tokens",
+        type=int,
+        help="Override the default maximum completion tokens for this run.",
+    )
+
     return parser.parse_args()
 
 
-def select_prompt(prompt_manager: PromptManager) -> str | None:
-    prompts = prompt_manager.list_prompts()
+def handle_command(user_input: str, context: AppContext) -> bool:
+    """
+    Handle an application command.
 
-    if not prompts:
-        raise RuntimeError(
-            f"No prompts found in: {prompt_manager.prompts_directory}"
+    Returns True if the input was a command,
+    False if it should be sent to AMALIA.
+    """
+
+    if not user_input.startswith("/"):
+        return False
+
+    command_input = user_input[1:].strip()
+
+    if not command_input:
+        return True
+
+    parts = command_input.split()
+
+    command_name = parts[0]
+    arguments = parts[1:]
+
+    command = context.command_registry.get(command_name)
+
+    if command is None:
+        print(
+            f"Unknown command: /{command_name}. "
+            "Use /help to see available commands."
         )
+        return True
 
-    print("Available system prompts:\n")
+    command.handler(context, *arguments)
 
-    for index, prompt_name in enumerate(prompts, start=1):
-        print(f"  {index}. {prompt_name}")
+    return True
 
-    print()
-
-    while True:
-        selection = input("Select a prompt: ").strip()
-
-        if selection.lower() == "exit":
-            return None
-
-        try:
-            index = int(selection)
-        except ValueError:
-            print("Please enter a number or 'exit'.")
-            continue
-
-        if 1 <= index <= len(prompts):
-            return prompt_manager.get_prompt(prompts[index - 1])
-
-        print("Invalid selection.")
 
 def main():
     args = parse_arguments()
 
     config = Config()
-    client = AmaliaClient(config)
+
+    if args.config:
+        config.setup()
+        return
+
+    if not config.is_configured():
+        print("No AMALIA configuration found.")
+        print()
+
+        config.setup()
+        print()
+
+    # CLI arguments override persistent configuration
+    # for this specific run.
+    temperature = (
+        args.temperature
+        if args.temperature is not None
+        else config.temperature
+    )
+
+    max_completion_tokens = (
+        args.max_completion_tokens
+        if args.max_completion_tokens is not None
+        else config.max_completion_tokens
+    )
+
+    # Apply runtime values to the configuration object used
+    # by the client without modifying the persistent .env.
+    config.temperature = temperature
+    config.max_completion_tokens = max_completion_tokens
 
     project_root = Path(__file__).resolve().parents[2]
     prompts_directory = project_root / "prompts"
 
     prompt_manager = PromptManager(prompts_directory)
+
     if args.list_prompts:
         prompts = prompt_manager.list_prompts()
 
@@ -83,30 +151,43 @@ def main():
 
         return
 
-    if args.prompt:
-        system_prompt = prompt_manager.get_prompt(args.prompt)
-    else:
-        system_prompt = select_prompt(prompt_manager)
-        
-    if system_prompt is None:
-        return
+    # --prompt overrides the configured default for this run.
+    # Otherwise, use DEFAULT_PROMPT from configuration.
+    prompt_name = (
+        args.prompt
+        if args.prompt
+        else config.default_prompt
+    )
 
+    system_prompt = prompt_manager.get_prompt(prompt_name)
+
+    client = AmaliaClient(config)
     conversation = Conversation(system_prompt)
 
-    print("\nAMALIA CLI")
-    print("Type 'exit' to quit.\n")
+    command_registry = CommandRegistry()
 
-    while True:
+    context = AppContext(
+        client=client,
+        conversation=conversation,
+        prompt_manager=prompt_manager,
+        command_registry=command_registry,
+    )
+
+    print("\nAMALIA CLI")
+    print("Type /help for available commands.\n")
+
+    while context.running:
         try:
-            user_input = input("You > ")
+            user_input = input("You > ").strip()
+
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye!")
             break
 
-        if user_input.lower() == "exit":
-            break
+        if not user_input:
+            continue
 
-        if not user_input.strip():
+        if handle_command(user_input, context):
             continue
 
         conversation.add_user_message(user_input)
@@ -117,7 +198,9 @@ def main():
             conversation.get_messages()
         )
 
-        conversation.add_assistant_message(assistant_response)
+        conversation.add_assistant_message(
+            assistant_response
+        )
 
 
 if __name__ == "__main__":
