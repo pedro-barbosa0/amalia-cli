@@ -11,10 +11,12 @@ class AmaliaAppController:
         client: AmaliaClient,
         conversation: Conversation,
         command_registry: CommandRegistry,
+        config,
     ):
         self.client = client
         self.conversation = conversation
         self.command_registry = command_registry
+        self.config = config
 
         self.running = True
 

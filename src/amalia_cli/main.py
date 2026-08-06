@@ -1,30 +1,13 @@
 import argparse
 from pathlib import Path
 
-from textual import app
-
+from .app import AmaliaAppController
 from .client import AmaliaClient
 from .commands.registry import CommandRegistry
 from .configuration import Config
 from .conversation import Conversation
 from .prompts import PromptManager
 from .tui.tui import AmaliaTUI
-from .app import AmaliaAppController
-
-class AppContext:
-    def __init__(
-        self,
-        client: AmaliaClient,
-        conversation: Conversation,
-        prompt_manager: PromptManager,
-        command_registry: CommandRegistry,
-    ):
-        self.client = client
-        self.conversation = conversation
-        self.prompt_manager = prompt_manager
-        self.command_registry = command_registry
-
-        self.running = True
 
 
 def parse_arguments():
@@ -65,56 +48,35 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def handle_command(user_input: str, context: AppContext) -> bool:
-    """
-    Handle an application command.
-
-    Returns True if the input was a command,
-    False if it should be sent to AMALIA.
-    """
-
-    if not user_input.startswith("/"):
-        return False
-
-    command_input = user_input[1:].strip()
-
-    if not command_input:
-        return True
-
-    parts = command_input.split()
-
-    command_name = parts[0]
-    arguments = parts[1:]
-
-    command = context.command_registry.get(command_name)
-
-    if command is None:
-        print(
-            f"Unknown command: /{command_name}. "
-            "Use /help to see available commands."
-        )
-        return True
-
-    command.handler(context, *arguments)
-
-    return True
-
-
 def main():
     args = parse_arguments()
 
     config = Config()
 
+    project_root = Path(__file__).resolve().parents[2]
+    prompts_directory = project_root / "prompts"
+
+    prompt_manager = PromptManager(prompts_directory)
+
+    # --list-prompts does not require AMALIA configuration.
+    if args.list_prompts:
+        prompts = prompt_manager.list_prompts()
+
+        if not prompts:
+            print("No prompts found.")
+            return
+
+        print("Available prompts:\n")
+
+        for prompt_name in prompts:
+            print(f"  {prompt_name}")
+
+        return
+
+    # Explicit --config remains available as a CLI fallback.
     if args.config:
         config.setup()
         return
-
-    if not config.is_configured():
-        print("No AMALIA configuration found.")
-        print()
-
-        config.setup()
-        print()
 
     # CLI arguments override persistent configuration
     # for this specific run.
@@ -130,59 +92,49 @@ def main():
         else config.max_completion_tokens
     )
 
-    # Apply runtime values to the configuration object used
-    # by the client without modifying the persistent .env.
     config.temperature = temperature
     config.max_completion_tokens = max_completion_tokens
 
-    project_root = Path(__file__).resolve().parents[2]
-    prompts_directory = project_root / "prompts"
+    # If configuration doesn't exist yet, the TUI will open
+    # the first-run configuration screen.
+    if config.is_configured():
+        prompt_name = (
+            args.prompt
+            if args.prompt
+            else config.default_prompt
+        )
 
-    prompt_manager = PromptManager(prompts_directory)
+        system_prompt = prompt_manager.get_prompt(prompt_name)
 
-    if args.list_prompts:
-        prompts = prompt_manager.list_prompts()
+        client = AmaliaClient(config)
 
-        if not prompts:
-            print("No prompts found.")
-            return
+        conversation = Conversation(system_prompt)
 
-        print("Available prompts:\n")
+        command_registry = CommandRegistry()
 
-        for prompt_name in prompts:
-            print(f"  {prompt_name}")
+        controller = AmaliaAppController(
+            client=client,
+            conversation=conversation,
+            command_registry=command_registry,
+            config=config,
+        )
 
-        return
+        tui = AmaliaTUI(
+            controller=controller,
+            config=config,
+            prompt_manager=prompt_manager,
+        )
 
-    # --prompt overrides the configured default for this run.
-    # Otherwise, use DEFAULT_PROMPT from configuration.
-    prompt_name = (
-        args.prompt
-        if args.prompt
-        else config.default_prompt
-    )
+    else:
+        # The controller cannot be created yet because there is
+        # no valid configuration/client.
+        tui = AmaliaTUI(
+            controller=None,
+            config=config,
+            prompt_manager=prompt_manager,
+        )
 
-    system_prompt = prompt_manager.get_prompt(prompt_name)
-
-    client = AmaliaClient(config)
-    conversation = Conversation(system_prompt)
-    command_registry = CommandRegistry()
-    
-    controller = AmaliaAppController(
-        client=client,
-        conversation=conversation,
-        command_registry=command_registry,
-    )
-
-    context = AppContext(
-        client=client,
-        conversation=conversation,
-        prompt_manager=prompt_manager,
-        command_registry=command_registry,
-    )
-
-    app = AmaliaTUI(controller)
-    app.run()
+    tui.run()
 
 
 if __name__ == "__main__":

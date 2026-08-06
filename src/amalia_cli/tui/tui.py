@@ -5,7 +5,12 @@ from textual.widgets import Footer, Header, Input, Markdown, Static
 from textual.theme import Theme
 
 from ..app import AmaliaAppController
-
+from ..configuration import Config
+from ..prompts import PromptManager
+from .setup import ConfigurationScreen
+from ..client import AmaliaClient
+from ..conversation import Conversation
+from ..commands.registry import CommandRegistry
 
 terminal_theme = Theme(
     name="terminal",
@@ -28,11 +33,15 @@ class AmaliaTUI(App):
 
     def __init__(
         self,
-        controller: AmaliaAppController,
+        controller: AmaliaAppController | None,
+        config: Config,
+        prompt_manager: PromptManager,
     ) -> None:
         super().__init__(ansi_color=True)
 
         self.controller = controller
+        self.config = config
+        self.prompt_manager = prompt_manager
 
         self.register_theme(terminal_theme)
         self.theme = "terminal"
@@ -57,13 +66,19 @@ class AmaliaTUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Amalia"
+        self.title = "AMALIA"
         self.sub_title = "CLI"
 
+        if not self.config.is_configured():
+            self.open_configuration(first_run=True)
+
     def on_input_submitted(
-            self,
-            event: Input.Submitted,
+        self,
+        event: Input.Submitted,
     ) -> None:
+        if self.controller is None:
+            return
+
         message = event.value.strip()
 
         if not message:
@@ -96,6 +111,9 @@ class AmaliaTUI(App):
         self,
         message: str,
     ) -> None:
+        if self.controller is None:
+            return
+
         try:
             for chunk in self.controller.send_message(message):
                 self.call_from_thread(
@@ -174,3 +192,65 @@ class AmaliaTUI(App):
         messages.scroll_end(animate=False)
 
         return widget
+
+    def open_configuration(
+        self,
+        first_run: bool = False,
+    ) -> None:
+        self.push_screen(
+            ConfigurationScreen(
+                config=self.config,
+                prompt_manager=self.prompt_manager,
+                first_run=first_run,
+            ),
+            self.configuration_finished,
+        )
+
+    def configuration_finished(
+        self,
+        result: bool | None,
+    ) -> None:
+        if not result:
+            if not self.config.is_configured():
+                self.exit()
+
+            return
+
+        self._initialize_controller()
+
+        messages = self.query_one(
+            "#messages",
+            VerticalScroll,
+        )
+
+        messages.mount(
+            Markdown(
+                "**AMALIA**\n\nConfiguration saved. "
+                "I'm ready.",
+                classes="message assistant",
+            )
+        )
+
+        messages.scroll_end(animate=False)
+
+        self.query_one("#input", Input).focus()
+
+    def _initialize_controller(self) -> None:
+        prompt_name = self.config.default_prompt
+
+        system_prompt = self.prompt_manager.get_prompt(
+            prompt_name
+        )
+
+        client = AmaliaClient(self.config)
+
+        conversation = Conversation(system_prompt)
+
+        command_registry = CommandRegistry()
+
+        self.controller = AmaliaAppController(
+            client=client,
+            conversation=conversation,
+            command_registry=command_registry,
+            config=self.config,
+        )
