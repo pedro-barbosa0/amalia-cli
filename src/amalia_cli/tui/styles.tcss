@@ -4,35 +4,49 @@ Screen {
 }
 
 #messages {
-    color: ansi_red;
     height: 1fr;
-    padding: 1 1;
+    width: 100%;
+    padding: 1 2;
+    background: ansi_black;
 }
 
 .message {
+    width: 100%;
     margin-bottom: 1;
+    padding: 0 1;
 }
 
 .user {
     color: ansi_white;
     text-style: bold;
+    border-left: tall ansi_yellow;
 }
 
 .assistant {
-    /*color: ansi_white;*/
-    /*margin-left: 2;*/
+    color: ansi_white;
+    border-left: tall ansi_red;
 }
 
-#Input {
+#input {
     dock: bottom;
+    height: 3;
+    margin: 0 1 1 1;
+    padding: 0 1;
     background: ansi_black;
     color: ansi_white;
     border: tall ansi_red;
-    margin-bottom: 2;
 }
 
-#Input:focus {
+#input:focus {
     border: tall ansi_yellow;
+}
+
+Markdown {
+    background: ansi_black;
+}
+
+Static {
+    background: ansi_black;
 }
 
 /* SETUP - menuconfig style */

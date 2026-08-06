@@ -8,7 +8,8 @@ from .configuration import Config
 from .conversation import Conversation
 from .prompts import PromptManager
 from .tui.tui import AmaliaTUI
-
+from .agent.session import AgentSession
+from .agent.executor import AgentExecutor
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -108,13 +109,15 @@ def main():
 
         client = AmaliaClient(config)
 
-        conversation = Conversation(system_prompt)
-
+        chat_conversation = Conversation(system_prompt)
+        agent_session = AgentSession(prompt_manager.get_prompt("coding"))
         command_registry = CommandRegistry()
-
+        agent_executor = AgentExecutor(working_directory=project_root,)
         controller = AmaliaAppController(
             client=client,
-            conversation=conversation,
+            chat_conversation=chat_conversation,
+            agent_session=agent_session,
+            agent_executor=agent_executor,
             command_registry=command_registry,
             config=config,
         )
